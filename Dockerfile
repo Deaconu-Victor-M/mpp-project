@@ -35,9 +35,9 @@ RUN adduser --system --uid 1001 nextjs
 
 # Copy necessary files for running the application
 COPY --from=builder /next.config.ts ./
-COPY --from=builder /app/public/ ./public/
-COPY --from=builder /app/.next/standalone ./
-COPY --from=builder /app/.next/static ./.next/static
+COPY --from=builder /public ./public
+COPY --from=builder /.next/standalone ./
+COPY --from=builder /.next/static ./.next/static
 
 USER nextjs
 

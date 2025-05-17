@@ -64,7 +64,7 @@ jobs:
         container-name: ${{ env.CONTAINER_NAME }}
         image: ${{ steps.build-image.outputs.image }}
 
-    - name: Update task definition
+     - name: Update task definition
       run: |
         export AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query "Account" --output text)
         export AWS_REGION=${{ env.AWS_REGION }}

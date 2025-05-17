@@ -1,7 +1,6 @@
 "use client";
 
 import { InfoIcon } from "lucide-react";
-import { redirect } from "next/navigation";
 
 import { useState, useEffect, useRef } from "react";
 import {

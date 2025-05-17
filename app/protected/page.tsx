@@ -33,6 +33,14 @@ import VideoSetup from "@/components/VideoSetup";
 import ProfileImage from '@/components/ProfileImage';
 import { User } from "@supabase/supabase-js";
 
+import { jwtDecode } from 'jwt-decode'
+
+// Add custom interface for JWT payload
+interface CustomJwtPayload {
+  user_role?: 'admin' | 'user';
+  [key: string]: any;
+}
+
 // Add type definition for UserRole
 interface UserRole {
   id?: number;
@@ -287,16 +295,50 @@ export default function ProtectedPage() {
       }
       
       setUser(user);
+      
+      // Get the session to access the token
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.access_token) {
+        const jwt = jwtDecode<CustomJwtPayload>(session.access_token);
+        console.log("JWT decoded:", jwt);
+        // Store the complete JWT
+        setDecodedJwt(jwt);
+        // Set user role from JWT claims
+        if (jwt.user_role) {
+          setUserRole({
+            user_id: user.id,
+            role: jwt.user_role
+          });
+        }
+      }
     };
     
     checkUser();
+    
+    // Set up auth state change listener
+    const { data } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (session) {
+        const jwt = jwtDecode<CustomJwtPayload>(session.access_token);
+        if (jwt.user_role) {
+          setUserRole({
+            user_id: session.user.id,
+            role: jwt.user_role
+          });
+        }
+      }
+    });
+    
+    // Cleanup listener on unmount
+    return () => {
+      data?.subscription?.unsubscribe?.();
+    };
   }, []);
-
 
   const [userRole, setUserRole] = useState<UserRole | null>(null);
   const { isOnline } = useNetworkStatus();
   const [expandedLead, setExpandedLead] = useState<string | null>(null);
   const [openMenuLeadId, setOpenMenuLeadId] = useState<string | null>(null);
+  const [decodedJwt, setDecodedJwt] = useState<CustomJwtPayload | null>(null);
 
   // New state for delete confirmation modal
   const [showDeleteModal, setShowDeleteModal] = useState(false);
@@ -1582,69 +1624,6 @@ export default function ProtectedPage() {
     };
   }, [showFilterDropdown]);
 
-  // Fetch user role with better error handling and offline support
-  const fetchUserRole = async (userId: string) => {
-    if (!isOnline) {
-      console.log("Offline - setting default user role");
-      setUserRole({ user_id: userId, role: "user" });
-      return;
-    }
-
-    try {
-      // Add a timeout to the fetch to prevent long waiting times
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
-      
-      console.log("Fetching user role for user:", userId);
-      const response = await fetch(`/api/user_roles/${userId}`, {
-        signal: controller.signal
-      });
-      
-      clearTimeout(timeoutId);
-      
-      // Parse the response even if it's not a 200 OK
-      const data = await response.json();
-      console.log("User role response:", data);
-      
-      // If there's an error in the response but we also have a default role, use it
-      if (data.error && data.role) {
-        console.log("API returned an error but provided a default role:", data.role);
-        setUserRole(data.role);
-        return;
-      }
-      
-      // If the response isn't OK and we don't have a role fallback, throw an error
-      if (!response.ok && !data.role) {
-        throw new Error(data.error || 'Failed to fetch user role');
-      }
-
-      // Set the user role from the response
-      setUserRole(data.role);
-    } catch (error) {
-      console.error('Error fetching user role:', error);
-      
-      // If the request was aborted due to timeout or network issues,
-      // set a default role instead of showing an error
-      if (error instanceof DOMException && error.name === 'AbortError') {
-        console.log("User role fetch timed out, using default role");
-      } else if (!window.navigator.onLine) {
-        console.log("Offline detected, using default role");
-      } else {
-        // Only show toast for unexpected errors
-        toast.error('Failed to fetch user role - using default');
-      }
-      
-      // Always set a default role in error cases
-      setUserRole({ user_id: userId, role: "user" });
-    }
-  };
-
-  useEffect(() => {
-    if (user) {
-      fetchUserRole(user.id);
-    }
-  }, [user]);
-
   return (
     <div className="flex-1 w-full flex flex-col gap-12">
       <Toaster
@@ -1686,6 +1665,26 @@ export default function ProtectedPage() {
         <pre className="text-xs font-mono p-3 rounded border max-h-32 overflow-auto">
           {JSON.stringify(user, null, 2)}
         </pre>
+      </div>
+      <div className="flex flex-col gap-2 items-start">
+        <h2 className="font-bold text-2xl mb-4">JWT Token Contents</h2>
+        <pre className="text-xs font-mono p-3 rounded border max-h-64 overflow-auto">
+          {JSON.stringify(decodedJwt, null, 2)}
+        </pre>
+      </div>
+      <div className="flex flex-col gap-2 items-start">
+        <h2 className="font-bold text-2xl mb-4">Your role</h2>
+        <div className="text-xl p-4 bg-accent rounded-md flex items-center gap-2">
+          <DashboardIcon className="w-5 h-5" />
+          <span className="font-semibold">
+            {userRole?.role === 'admin' ? 'Administrator' : userRole?.role || 'Loading...'}
+          </span>
+          {userRole?.role === 'admin' && 
+            <span className="bg-blue-500 text-white px-2 py-1 text-xs uppercase rounded-full ml-2">
+              Full Access
+            </span>
+          }
+        </div>
       </div>
       <div className="relative w-full">
 

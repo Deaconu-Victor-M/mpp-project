@@ -37,7 +37,7 @@ RUN adduser --system --uid 1001 nextjs
 # Copy necessary files for running the application
 COPY --from=builder /app/next.config.ts ./
 RUN mkdir -p /app/public
-COPY --from=builder /app/public ./public || mkdir -p ./public/
+RUN if [ -d /app/public ]; then cp -r /app/public ./public; else mkdir -p ./public; fi
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
 

@@ -64,6 +64,13 @@ jobs:
         container-name: ${{ env.CONTAINER_NAME }}
         image: ${{ steps.build-image.outputs.image }}
 
+    - name: Update task definition
+      run: |
+        export AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query "Account" --output text)
+        export AWS_REGION=${{ env.AWS_REGION }}
+        envsubst < ${{ env.ECS_TASK_DEFINITION }} > task-definition-updated.json
+        echo "ECS_TASK_DEFINITION=task-definition-updated.json" >> $GITHUB_ENV
+
     - name: Deploy Amazon ECS task definition
       uses: aws-actions/amazon-ecs-deploy-task-definition@v1
       with:
@@ -71,3 +78,4 @@ jobs:
         service: ${{ env.ECS_SERVICE }}
         cluster: ${{ env.ECS_CLUSTER }}
         wait-for-service-stability: true 
+

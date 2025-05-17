@@ -13,11 +13,12 @@ WORKDIR /app
 # Add these lines to accept build args
 ARG NEXT_PUBLIC_SUPABASE_URL
 ARG NEXT_PUBLIC_SUPABASE_ANON_KEY
-
+ARG DATABASE_URL=postgresql://postgres.pvxdexfhjhfwdvmgidnn:i1O3EGvvA1PDykyo@aws-0-eu-central-1.pooler.supabase.com:6543/postgres?pgbouncer=true
 # Set them as environment variables
 ENV NEXT_PUBLIC_SUPABASE_URL=$NEXT_PUBLIC_SUPABASE_URL
 ENV NEXT_PUBLIC_SUPABASE_ANON_KEY=$NEXT_PUBLIC_SUPABASE_ANON_KEY
 ENV NEXT_TELEMETRY_DISABLED=1
+ENV DATABASE_URL=$DATABASE_URL
 
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .

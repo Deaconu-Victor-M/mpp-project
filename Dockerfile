@@ -33,6 +33,8 @@ ENV NEXT_TELEMETRY_DISABLED=1
 RUN addgroup --system --gid 1001 nodejs
 RUN adduser --system --uid 1001 nextjs
 
+RUN mkdir -p /app/public
+
 # Copy necessary files for running the application
 COPY --from=builder /app/next.config.ts ./
 COPY --from=builder /app/public ./public

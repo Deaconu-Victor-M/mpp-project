@@ -34,6 +34,7 @@ import ProfileImage from '@/components/ProfileImage';
 import { User } from "@supabase/supabase-js";
 
 import { jwtDecode } from 'jwt-decode'
+import { MFAEnrollment } from '../components/MFAEnrollment';
 
 // Add custom interface for JWT payload
 interface CustomJwtPayload {
@@ -280,6 +281,8 @@ const FilterDropdown = ({
 
 export default function ProtectedPage() {
   const [user, setUser] = useState<User | null>(null);
+  const [showMFAEnrollment, setShowMFAEnrollment] = useState(false);
+  const [mfaEnrolled, setMfaEnrolled] = useState(false);
   
   // Create supabase browser client using the correct function
   const supabase = createClient();
@@ -294,8 +297,6 @@ export default function ProtectedPage() {
         return;
       }
       
-      setUser(user);
-      
       // Get the session to access the token
       const { data: { session } } = await supabase.auth.getSession();
       if (session?.access_token) {
@@ -309,6 +310,22 @@ export default function ProtectedPage() {
             user_id: user.id,
             role: jwt.user_role
           });
+        }
+
+        // Check MFA status
+        const { data: mfaData } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+        
+        // If 2FA is required but not verified, redirect to verification page
+        if (mfaData?.currentLevel === 'aal1' && mfaData?.nextLevel === 'aal2') {
+          window.location.href = "/verify-2fa";
+          return;
+        }
+
+        // If 2FA is not required or already verified, show enrollment if needed
+        if (mfaData?.currentLevel === 'aal1' && mfaData?.nextLevel === 'aal1') {
+          setShowMFAEnrollment(true);
+        } else if (mfaData?.currentLevel === 'aal2') {
+          setMfaEnrolled(true);
         }
       }
     };
@@ -1626,6 +1643,22 @@ export default function ProtectedPage() {
 
   return (
     <div className="flex-1 w-full flex flex-col gap-12">
+      {showMFAEnrollment && (
+        <MFAEnrollment
+          onEnrolled={() => {
+            setShowMFAEnrollment(false);
+            setMfaEnrolled(true);
+            toast.success('Two-factor authentication enabled successfully!');
+          }}
+          onCancelled={() => {
+            setShowMFAEnrollment(false);
+            toast('You can enable 2FA later from your settings', {
+              icon: 'ℹ️',
+            });
+          }}
+        />
+      )}
+
       <Toaster
         position="bottom-right"
         toastOptions={{
@@ -1660,487 +1693,532 @@ export default function ProtectedPage() {
           user
         </div>
       </div>
-      <div className="flex flex-col gap-2 items-start">
-        <h2 className="font-bold text-2xl mb-4">Your user details</h2>
-        <pre className="text-xs font-mono p-3 rounded border max-h-32 overflow-auto">
-          {JSON.stringify(user, null, 2)}
-        </pre>
-      </div>
-      <div className="flex flex-col gap-2 items-start">
-        <h2 className="font-bold text-2xl mb-4">JWT Token Contents</h2>
-        <pre className="text-xs font-mono p-3 rounded border max-h-64 overflow-auto">
-          {JSON.stringify(decodedJwt, null, 2)}
-        </pre>
-      </div>
-      <div className="flex flex-col gap-2 items-start">
-        <h2 className="font-bold text-2xl mb-4">Your role</h2>
-        <div className="text-xl p-4 bg-accent rounded-md flex items-center gap-2">
-          <DashboardIcon className="w-5 h-5" />
-          <span className="font-semibold">
-            {userRole?.role === 'admin' ? 'Administrator' : userRole?.role || 'Loading...'}
-          </span>
-          {userRole?.role === 'admin' && 
-            <span className="bg-blue-500 text-white px-2 py-1 text-xs uppercase rounded-full ml-2">
-              Full Access
-            </span>
-          }
+
+      {/* User Details Section */}
+      <div className="flex flex-col gap-4">
+        <h2 className="font-bold text-2xl">Your Account</h2>
+        
+        {/* User Info */}
+        <div className="bg-white border border-[#EBEBEB] rounded-xl p-6">
+          <div className="flex flex-col gap-2">
+            <h3 className="text-lg font-semibold text-[#4F4F4F]">User Details</h3>
+            <pre className="text-xs font-mono p-3 rounded border max-h-32 overflow-auto">
+              {JSON.stringify(user, null, 2)}
+            </pre>
+          </div>
+        </div>
+
+        {/* JWT Info */}
+        <div className="bg-white border border-[#EBEBEB] rounded-xl p-6">
+          <div className="flex flex-col gap-2">
+            <h3 className="text-lg font-semibold text-[#4F4F4F]">JWT Token Contents</h3>
+            <pre className="text-xs font-mono p-3 rounded border max-h-64 overflow-auto">
+              {JSON.stringify(decodedJwt, null, 2)}
+            </pre>
+          </div>
+        </div>
+
+        {/* Role Info */}
+        <div className="bg-white border border-[#EBEBEB] rounded-xl p-6">
+          <div className="flex flex-col gap-2">
+            <h3 className="text-lg font-semibold text-[#4F4F4F]">Your Role</h3>
+            <div className="text-xl p-4 bg-accent rounded-md flex items-center gap-2">
+              <DashboardIcon className="w-5 h-5" />
+              <span className="font-semibold">
+                {userRole?.role === 'admin' ? 'Administrator' : userRole?.role || 'Loading...'}
+              </span>
+              {userRole?.role === 'admin' && 
+                <span className="bg-blue-500 text-white px-2 py-1 text-xs uppercase rounded-full ml-2">
+                  Full Access
+                </span>
+              }
+            </div>
+          </div>
+        </div>
+
+        {/* 2FA Status */}
+        <div className="bg-white border border-[#EBEBEB] rounded-xl p-6">
+          <div className="flex flex-col gap-2">
+            <h3 className="text-lg font-semibold text-[#4F4F4F]">Two-Factor Authentication</h3>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className={`w-3 h-3 rounded-full ${mfaEnrolled ? 'bg-green-500' : 'bg-yellow-500'}`}></div>
+                <span className="text-[#4F4F4F]">
+                  {mfaEnrolled ? 'Enabled' : 'Not Enabled'}
+                </span>
+              </div>
+              {!mfaEnrolled && (
+                <button
+                  onClick={() => setShowMFAEnrollment(true)}
+                  className="px-4 py-2 bg-[#252525] text-white rounded-lg hover:bg-[#1a1a1a] cursor-pointer"
+                >
+                  Enable 2FA
+                </button>
+              )}
+            </div>
+            {!mfaEnrolled && (
+              <p className="text-sm text-[#4F4F4F]/60 mt-2">
+                Add an extra layer of security to your account by enabling two-factor authentication.
+              </p>
+            )}
+          </div>
         </div>
       </div>
+
       <div className="relative w-full">
+        <div className="w-full p-3 flex flex-col items-start gap-10">
+          <nav>
+            <div className="flex flex-row justify-between items-center rounded-lg bg-[#F7F7F7] py-[5px] pl-2 pr-3 w-fit gap-2">
+              <DashboardIcon className="w-3 h-3 text-[#4F4F4F]" />
+              <span className="text-[14px] font-regular text-[#4F4F4F]">
+                {userRole?.role}
+              </span>
+            </div>
+          </nav>
+          <header className="mb-8 w-full">
+            <div className="flex flex-row justify-between items-center mb-1">
+              <h1 className="text-[26px] font-semibold text-[#4F4F4F] tracking-[-3%]">
+                Master List{" "}
+                {!isOnline && (
+                  <span className="text-[#FF4747] text-lg">• Offline Mode</span>
+                )}
+              </h1>
+              {isOnline && <TestDataGenerator />}
+            </div>
+            <p className="text-[#4F4F4F]/50 text-xl">{formattedDate}</p>
+            <div className="border-t border-gray-200 mt-4"></div>
+          </header>
+        </div>
 
-      <div className="w-full p-3 flex flex-col items-start gap-10">
-        <nav>
-          <div className="flex flex-row justify-between items-center rounded-lg bg-[#F7F7F7] py-[5px] pl-2 pr-3 w-fit gap-2">
-            <DashboardIcon className="w-3 h-3 text-[#4F4F4F]" />
-            <span className="text-[14px] font-regular text-[#4F4F4F]">
-              {userRole?.role}
-            </span>
-          </div>
-        </nav>
-        <header className="mb-8 w-full">
-          <div className="flex flex-row justify-between items-center mb-1">
-            <h1 className="text-[26px] font-semibold text-[#4F4F4F] tracking-[-3%]">
-              Master List{" "}
-              {!isOnline && (
-                <span className="text-[#FF4747] text-lg">• Offline Mode</span>
-              )}
-            </h1>
-            {isOnline && <TestDataGenerator />}
-          </div>
-          <p className="text-[#4F4F4F]/50 text-xl">{formattedDate}</p>
-          <div className="border-t border-gray-200 mt-4"></div>
-        </header>
-      </div>
-
-      <div className="flex flex-row w-full">
-        {/* Stats/Charts Grid */}
-        <div
-          id="stats-container"
-          className="relative w-full px-3 tracking-[-3%] mb-5 flex flex-row gap-[20px]"
-        >
-          {/* Category Distribution Chart */}
+        <div className="flex flex-row w-full">
+          {/* Stats/Charts Grid */}
           <div
-            id="stats-category-distribution-container"
-            className="flex flex-col gap-[15px] p-4 rounded-xl border border-[#EBEBEB] w-full"
+            id="stats-container"
+            className="relative w-full px-3 tracking-[-3%] mb-5 flex flex-row gap-[20px]"
           >
-            <div className="flex flex-col items-start gap-3 px-3 py-1">
-              <div className="flex justify-between items-center w-full">
-                <h2 className="text-[18px] font-medium text-[#4F4F4F] tracking-[-3%] opacity-40">
-                  Leads by Category
-                </h2>
+            {/* Category Distribution Chart */}
+            <div
+              id="stats-category-distribution-container"
+              className="flex flex-col gap-[15px] p-4 rounded-xl border border-[#EBEBEB] w-full"
+            >
+              <div className="flex flex-col items-start gap-3 px-3 py-1">
+                <div className="flex justify-between items-center w-full">
+                  <h2 className="text-[18px] font-medium text-[#4F4F4F] tracking-[-3%] opacity-40">
+                    Leads by Category
+                  </h2>
+                  <button
+                    onClick={() => {
+                      setCategoryChartLoading(true);
+                      refreshChartData();
+                    }}
+                    className="text-[12px] text-[#4F4F4F]/40 hover:underline flex items-center"
+                    disabled={categoryChartLoading}
+                  >
+                    {categoryChartLoading ? "Refreshing..." : "Refresh"}
+                  </button>
+                </div>
+                {categoryChartLoading ? (
+                  <div className="flex items-center justify-center w-full py-8">
+                    <div className="w-8 h-8 border-4 border-[#5FAF94] border-t-transparent rounded-full animate-spin"></div>
+                  </div>
+                ) : (
+                  <div className="flex flex-col items-center w-full">
+                    <CategoryPieChart data={categoryChartData} />
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Videos section */}
+          <div className="relative w-full px-3 tracking-[-3%] mb-5">
+            <VideoList 
+              videos={videos} 
+              onVideoUploaded={handleVideoUploaded}
+              isLoading={isLoadingVideos}
+              onRefresh={fetchVideos}
+            />
+          </div>
+        </div>
+
+        {/* Leads table */}
+        <div
+          id="leads-table-container"
+          className="relative w-full p-[10px] bg-[#F7F7F7] rounded-xl mt-8"
+        >
+          {isLoading ? (
+            <div className="flex justify-center items-center h-64">
+              <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-500"></div>
+            </div>
+          ) : (
+            <div className="flex flex-col gap-[15px] w-full">
+              <div
+                id="title-container"
+                className="flex flex-row justify-between items-center px-3 gap-1"
+              >
+                <div>
+                  <h2 className="text-[18px] font-medium text-[#4F4F4F]">Leads</h2>
+                  <p className="text-[16px] opacity-50 text-[#4F4F4F]">
+                    Showing {getDisplayedLeads().length} {isFiltering ? 'filtered' : ''} leads
+                  </p>
+                </div>
                 <button
                   onClick={() => {
-                    setCategoryChartLoading(true);
-                    refreshChartData();
+                    setIsLoading(true);
+                    fetch("/api/leads")
+                      .then(response => response.json())
+                      .then(data => {
+                        setLeads(data.leads);
+                        setIsLoading(false);
+                        // Re-apply filters if active
+                        if (isFiltering) {
+                          applyFilters();
+                        }
+                        toast.success("Leads refreshed");
+                      })
+                      .catch(error => {
+                        console.error("Error refreshing leads:", error);
+                        setIsLoading(false);
+                        toast.error("Failed to refresh leads");
+                      });
                   }}
-                  className="text-[12px] text-[#4F4F4F]/40 hover:underline flex items-center"
-                  disabled={categoryChartLoading}
+                  className="px-3 py-1 text-sm bg-[#252525] text-white rounded-lg hover:bg-[#1a1a1a] disabled:opacity-50"
+                  disabled={isLoading}
                 >
-                  {categoryChartLoading ? "Refreshing..." : "Refresh"}
+                  {isLoading ? "Refreshing..." : "Refresh Data"}
                 </button>
               </div>
-              {categoryChartLoading ? (
-                <div className="flex items-center justify-center w-full py-8">
-                  <div className="w-8 h-8 border-4 border-[#5FAF94] border-t-transparent rounded-full animate-spin"></div>
-                </div>
-              ) : (
-                <div className="flex flex-col items-center w-full">
-                  <CategoryPieChart data={categoryChartData} />
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-
-        {/* Videos section */}
-        <div className="relative w-full px-3 tracking-[-3%] mb-5">
-          <VideoList 
-            videos={videos} 
-            onVideoUploaded={handleVideoUploaded}
-            isLoading={isLoadingVideos}
-            onRefresh={fetchVideos}
-          />
-        </div>
-      </div>
-
-      {/* Leads table */}
-      <div
-        id="leads-table-container"
-        className="relative w-full p-[10px] bg-[#F7F7F7] rounded-xl mt-8"
-      >
-        {isLoading ? (
-          <div className="flex justify-center items-center h-64">
-            <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-500"></div>
-          </div>
-        ) : (
-          <div className="flex flex-col gap-[15px] w-full">
-            <div
-              id="title-container"
-              className="flex flex-row justify-between items-center px-3 gap-1"
-            >
-              <div>
-                <h2 className="text-[18px] font-medium text-[#4F4F4F]">Leads</h2>
-                <p className="text-[16px] opacity-50 text-[#4F4F4F]">
-                  Showing {getDisplayedLeads().length} {isFiltering ? 'filtered' : ''} leads
-                </p>
-              </div>
-              <button
-                onClick={() => {
-                  setIsLoading(true);
-                  fetch("/api/leads")
-                    .then(response => response.json())
-                    .then(data => {
-                      setLeads(data.leads);
-                      setIsLoading(false);
-                      // Re-apply filters if active
-                      if (isFiltering) {
-                        applyFilters();
-                      }
-                      toast.success("Leads refreshed");
-                    })
-                    .catch(error => {
-                      console.error("Error refreshing leads:", error);
-                      setIsLoading(false);
-                      toast.error("Failed to refresh leads");
-                    });
-                }}
-                className="px-3 py-1 text-sm bg-[#252525] text-white rounded-lg hover:bg-[#1a1a1a] disabled:opacity-50"
-                disabled={isLoading}
+              <div
+                id="filter-container"
+                className="flex flex-row items-center gap-3 relative"
               >
-                {isLoading ? "Refreshing..." : "Refresh Data"}
-              </button>
-            </div>
-            <div
-              id="filter-container"
-              className="flex flex-row items-center gap-3 relative"
-            >
-              <button 
-                id="filter-button"
-                onClick={handleFilterButtonClick}
-                className={`flex flex-row gap-[7.5px] px-[20px] h-[45px] rounded-xl w-fit justify-start items-center text-white bg-[#252525] font-medium text-[14px] cursor-pointer [box-shadow:_0px_-14px_24.4px_0px_rgba(0,0,0,0.77)_inset,_0px_0px_0px_1px_rgba(0,0,0,0.86)_inset,_0px_2px_0px_0px_rgba(255,255,255,0.17)_inset] ${isFiltering ? 'ring-2 ring-blue-500' : ''} relative`}
-              >
-                <FilterIcon className="mb-[2px] opacity-70 w-[12px] h-[15px]" />
-                <span>Filter</span>
-                {isFiltering && (
-                  <span className="absolute -top-2 -right-2 bg-blue-500 text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center">
-                    {getDisplayedLeads().length > 0 ? getDisplayedLeads().length : 0}
-                  </span>
-                )}
-              </button>
-              
-              <FilterDropdown
-                isOpen={showFilterDropdown}
-                onClose={() => setShowFilterDropdown(false)}
-                categories={categories}
-                selectedCategory={filterCategory}
-                onCategorySelect={setFilterCategory}
-                minFollowers={minFollowers}
-                maxFollowers={maxFollowers}
-                onFollowersChange={handleFollowersChange}
-                onApplyFilters={applyFilters}
-                onClearFilters={clearFilters}
-                className="filter-dropdown"
-              />
-              
-              <div className="flex flex-row justify-end items-center gap-[10px] px-4 h-[45px] rounded-xl w-full bg-white">
-                <div className="relative">
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setShowAddLeadModal("nav");
-                    }}
-                    className="flex flex-row p-1 hover:bg-[#d7d7d7] rounded-md justify-center items-center text-[#4F4F4F] font-medium text-[14px] cursor-pointer hover:opacity-80 w-full group"
-                  >
-                    <AddIcon className="mb-[2px] opacity-60 w-[15px] h-[15px] group-hover:opacity-100 cursor-pointer transition-opacity duration-150" />
-                  </button>
-                  <AddLeadModal
-                    isOpen={showAddLeadModal === "nav"}
-                    onClose={() => {
-                      setShowAddLeadModal(null);
-                      setAddLeadModalCategory(null);
-                    }}
-                    onSubmit={handleAddLead}
-                    twitterUrl={twitterUrl}
-                    setTwitterUrl={setTwitterUrl}
-                    isAddingLead={isAddingLead}
-                    className="-right-[16px] top-full"
-                    categories={categories}
-                    selectedCategory={addLeadModalCategory}
-                    onCategorySelect={setAddLeadModalCategory}
-                    onAddCategory={handleAddCategory}
-                    onDeleteCategory={handleDeleteCategory}
-                  />
-                </div>
-              </div>
-            </div>
-            <div id="leads-table" className="flex flex-col w-full">
-              {/* Main table header */}
-              <div className="overflow-hidden">
-                <div className="flex items-center px-3 py-2 text-[14px] opacity-50">
-                  <div className="flex items-center gap-[9px] w-[150px]">
-                    <DataIcon className="w-[15px] h-[15px]" />
-                    <span>Category</span>
-                  </div>
-                  <div className="flex items-center gap-[9px] w-[300px]">
-                    <ClientIcon className="w-[15px] h-[15px]" />
-                    <span>Lead</span>
-                  </div>
-                  <div className="flex items-center gap-[9px] w-[200px]">
-                    <WorldIcon className="w-[15px] h-[15px]" />
-                    <span>Twitter</span>
-                  </div>
-                  <div className="flex items-center gap-[9px] w-[200px]">
-                    <StatusIcon className="w-[15px] h-[15px]" />
-                    <span>Followers</span>
-                  </div>
-                  <div className="flex items-center gap-[9px] w-[200px]">
-                    <TimerIcon className="w-[15px] h-[15px]" />
-                    <span>Last Post</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Lead rows */}
-              <div className="leads-table-body">
-                {getDisplayedLeads().map((lead, index) => (
-                  <div key={`${lead.id}-${index}`} className="">
-                    {/* Main lead row */}
-                    <div
-                      className={`flex items-center px-3 py-2 cursor-pointer bg-white border border-[#F7F7F7] hover:bg-[#FCFCFC] ${
-                        index === 0
-                          ? "rounded-t-xl"
-                          : index === leads.length - 1
-                          ? "rounded-b-xl"
-                          : ""
-                      }
-                      ${expandedLead === lead.id ? "rounded-b-xl" : ""}`}
-                      onClick={() => toggleLead(lead.id)}
+                <button 
+                  id="filter-button"
+                  onClick={handleFilterButtonClick}
+                  className={`flex flex-row gap-[7.5px] px-[20px] h-[45px] rounded-xl w-fit justify-start items-center text-white bg-[#252525] font-medium text-[14px] cursor-pointer [box-shadow:_0px_-14px_24.4px_0px_rgba(0,0,0,0.77)_inset,_0px_0px_0px_1px_rgba(0,0,0,0.86)_inset,_0px_2px_0px_0px_rgba(255,255,255,0.17)_inset] ${isFiltering ? 'ring-2 ring-blue-500' : ''} relative`}
+                >
+                  <FilterIcon className="mb-[2px] opacity-70 w-[12px] h-[15px]" />
+                  <span>Filter</span>
+                  {isFiltering && (
+                    <span className="absolute -top-2 -right-2 bg-blue-500 text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center">
+                      {getDisplayedLeads().length > 0 ? getDisplayedLeads().length : 0}
+                    </span>
+                  )}
+                </button>
+                
+                <FilterDropdown
+                  isOpen={showFilterDropdown}
+                  onClose={() => setShowFilterDropdown(false)}
+                  categories={categories}
+                  selectedCategory={filterCategory}
+                  onCategorySelect={setFilterCategory}
+                  minFollowers={minFollowers}
+                  maxFollowers={maxFollowers}
+                  onFollowersChange={handleFollowersChange}
+                  onApplyFilters={applyFilters}
+                  onClearFilters={clearFilters}
+                  className="filter-dropdown"
+                />
+                
+                <div className="flex flex-row justify-end items-center gap-[10px] px-4 h-[45px] rounded-xl w-full bg-white">
+                  <div className="relative">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setShowAddLeadModal("nav");
+                      }}
+                      className="flex flex-row p-1 hover:bg-[#d7d7d7] rounded-md justify-center items-center text-[#4F4F4F] font-medium text-[14px] cursor-pointer hover:opacity-80 w-full group"
                     >
-                      {/* Category column */}
-                      <div
-                        className="flex items-center gap-[9px] w-[150px] relative"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setSelectedCategoryLeadId(
-                            selectedCategoryLeadId === lead.id ? null : lead.id
-                          );
-                        }}
-                      >
-                        {lead.category ? (
-                          <div
-                            className="px-2 py-1 rounded-lg text-[12px] font-medium cursor-pointer category-button"
-                            style={{
-                              backgroundColor: `${lead.category.color}`,
-                              color: "white",
-                            }}
-                          >
-                            {lead.category.name}
-                          </div>
-                        ) : (
-                          <div className="px-2 py-1 rounded-lg text-[12px] font-medium cursor-pointer category-button text-[#4F4F4F] hover:bg-[#F7F7F7]">
-                            Select Category
-                          </div>
-                        )}
-                        {selectedCategoryLeadId === lead.id && (
-                          <div 
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              e.preventDefault();
-                            }}
-                            onMouseDown={(e) => {
-                              e.stopPropagation();
-                              e.preventDefault();
-                            }}
-                          >
-                            <CategoryDropdown
-                              categories={categories}
-                              selectedCategory={lead.category || null}
-                              onSelect={(category) =>
-                                handleCategorySelect(lead.id, category)
-                              }
-                              onClose={() => setSelectedCategoryLeadId(null)}
-                              className="left-0 top-full mt-1"
-                              onAddCategory={handleAddCategory}
-                              onDeleteCategory={handleDeleteCategory}
-                            />
-                          </div>
-                        )}
-                      </div>
-                      {/* Lead column */}
-                      <div className="flex items-center gap-[9px] w-[300px]">
-                        <ProfileImage
-                          src={lead.profile_image_url}
-                          alt={lead.name}
-                          width={21}
-                          height={21}
-                          className="rounded-[4px]"
-                        />
-                        <span className="text-[14px]">
-                          {lead.name} 
-                        </span>
-                      </div>
-
-                      {/* Twitter column */}
-                      <div className="flex items-center gap-[9px] w-[200px]">
-                        <a
-                          href={`https://twitter.com/${lead.twitter_handle}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-[14px] text-blue-500 hover:underline"
-                        >
-                          @{lead.twitter_handle}
-                        </a>
-                      </div>
-
-                      {/* Followers column */}
-                      <div className="flex items-center gap-[9px] w-[200px]">
-                        <span className="text-[14px]">
-                          {lead.follower_count?.toLocaleString() || 0}
-                        </span>
-                      </div>
-
-                      {/* Last Post column */}
-                      <div className="flex items-center gap-[9px] w-[200px]">
-                        <span className="text-[14px]">
-                          {lead.last_post_date
-                            ? new Date(lead.last_post_date).toLocaleDateString()
-                            : "Never"}
-                        </span>
-                      </div>
-
-                      {/* More button */}
-                      <div
-                        id="add-personal-profile-button"
-                        className="relative ml-auto mr-3"
-                      >
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            
-                          }}
-                          className="flex flex-row p-1 hover:bg-[#e1e1e1] rounded-md justify-center items-center text-[#4F4F4F] font-medium text-[14px] cursor-pointer hover:opacity-80 w-full group"
-                        >
-                          <AddIcon className="mb-[2px] opacity-60 w-[15px] h-[15px] group-hover:opacity-100 cursor-pointer transition-opacity duration-150" />
-                        </button>
-                        {/* <AddPersonalProfileModal
-                          isOpen={showAddProfileModal === lead.id}
-                          onClose={() => {
-                            setShowAddProfileModal(null);
-                            setSelectedLeadId(null);
-                            setTwitterUrl("");
-                          }}
-                          onSubmit={handleAddProfile}
-                          twitterUrl={twitterUrl}
-                          setTwitterUrl={setTwitterUrl}
-                          isAddingProfile={isAddingProfile}
-                          className="right-0 top-full"
-                        /> */}
-                      </div>
-                      <div className="relative ">
-                        <button
-                          id="more-button"
-                          className="flex items-center gap-[9px] opacity-40 hover:opacity-100 transition-opacity duration-150 cursor-pointer"
-                          onClick={(e) => handleLeadMoreClick(e, lead.id)}
-                        >
-                          <MoreIcon className="w-[15px] h-[15px]" />
-                        </button>
-
-                        {/* More menu popup */}
-                        {openMenuLeadId === lead.id && (
-                          <div className="absolute right-0 top-full mt-1 bg-white border border-[#EBEBEB] rounded-lg shadow-lg min-w-[120px] z-10 menu-content">
-                            <button
-                              className="flex items-center gap-2 w-full px-3 py-2 text-[14px] text-[#4F4F4F] hover:bg-[#F7F7F7] transition-colors duration-150 cursor-pointer"
-                              onClick={(e) =>
-                                handleLeadEditClick(
-                                  e,
-                                  lead.id,
-                                  `https://twitter.com/${lead.twitter_handle}`
-                                )
-                              }
-                            >
-                              <EditIcon className="w-[15px] h-[15px]" />
-                              Edit
-                            </button>
-                            <button
-                              className="flex items-center gap-2 w-full px-3 py-2 text-[14px] text-[#FF4747] hover:bg-[#F7F7F7] transition-colors duration-150 cursor-pointer"
-                              onClick={(e) =>
-                                handleLeadDeleteClick(e, lead.id, lead.name)
-                              }
-                            >
-                              <TrashIcon className="w-[15px] h-[15px]" />
-                              Delete
-                            </button>
-                          </div>
-                        )}
-                      </div>
+                      <AddIcon className="mb-[2px] opacity-60 w-[15px] h-[15px] group-hover:opacity-100 cursor-pointer transition-opacity duration-150" />
+                    </button>
+                    <AddLeadModal
+                      isOpen={showAddLeadModal === "nav"}
+                      onClose={() => {
+                        setShowAddLeadModal(null);
+                        setAddLeadModalCategory(null);
+                      }}
+                      onSubmit={handleAddLead}
+                      twitterUrl={twitterUrl}
+                      setTwitterUrl={setTwitterUrl}
+                      isAddingLead={isAddingLead}
+                      className="-right-[16px] top-full"
+                      categories={categories}
+                      selectedCategory={addLeadModalCategory}
+                      onCategorySelect={setAddLeadModalCategory}
+                      onAddCategory={handleAddCategory}
+                      onDeleteCategory={handleDeleteCategory}
+                    />
+                  </div>
+                </div>
+              </div>
+              <div id="leads-table" className="flex flex-col w-full">
+                {/* Main table header */}
+                <div className="overflow-hidden">
+                  <div className="flex items-center px-3 py-2 text-[14px] opacity-50">
+                    <div className="flex items-center gap-[9px] w-[150px]">
+                      <DataIcon className="w-[15px] h-[15px]" />
+                      <span>Category</span>
+                    </div>
+                    <div className="flex items-center gap-[9px] w-[300px]">
+                      <ClientIcon className="w-[15px] h-[15px]" />
+                      <span>Lead</span>
+                    </div>
+                    <div className="flex items-center gap-[9px] w-[200px]">
+                      <WorldIcon className="w-[15px] h-[15px]" />
+                      <span>Twitter</span>
+                    </div>
+                    <div className="flex items-center gap-[9px] w-[200px]">
+                      <StatusIcon className="w-[15px] h-[15px]" />
+                      <span>Followers</span>
+                    </div>
+                    <div className="flex items-center gap-[9px] w-[200px]">
+                      <TimerIcon className="w-[15px] h-[15px]" />
+                      <span>Last Post</span>
                     </div>
                   </div>
-                ))}
-                <div className="relative">
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setShowAddLeadModal("table");
-                    }}
-                    className="flex flex-row gap-[7.5px] px-[14px] pt-[14px] pb-[7px] justify-start items-center text-[#4F4F4F] font-medium text-[14px] cursor-pointer hover:opacity-80 w-full"
-                  >
-                    <AddIcon className="mb-[3px] opacity-70 w-[8px] h-[8px]" />
-                    New Lead
-                  </button>
-                  <AddLeadModal
-                    isOpen={showAddLeadModal === "table"}
-                    onClose={() => {
-                      setShowAddLeadModal(null);
-                      setAddLeadModalCategory(null);
-                    }}
-                    onSubmit={handleAddLead}
-                    twitterUrl={twitterUrl}
-                    setTwitterUrl={setTwitterUrl}
-                    isAddingLead={isAddingLead}
-                    className="-left-[10px] top-full"
-                    categories={categories}
-                    selectedCategory={addLeadModalCategory}
-                    onCategorySelect={setAddLeadModalCategory}
-                    onAddCategory={handleAddCategory}
-                    onDeleteCategory={handleDeleteCategory}
-                  />
+                </div>
+
+                {/* Lead rows */}
+                <div className="leads-table-body">
+                  {getDisplayedLeads().map((lead, index) => (
+                    <div key={`${lead.id}-${index}`} className="">
+                      {/* Main lead row */}
+                      <div
+                        className={`flex items-center px-3 py-2 cursor-pointer bg-white border border-[#F7F7F7] hover:bg-[#FCFCFC] ${
+                          index === 0
+                            ? "rounded-t-xl"
+                            : index === leads.length - 1
+                            ? "rounded-b-xl"
+                            : ""
+                        }
+                        ${expandedLead === lead.id ? "rounded-b-xl" : ""}`}
+                        onClick={() => toggleLead(lead.id)}
+                      >
+                        {/* Category column */}
+                        <div
+                          className="flex items-center gap-[9px] w-[150px] relative"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedCategoryLeadId(
+                              selectedCategoryLeadId === lead.id ? null : lead.id
+                            );
+                          }}
+                        >
+                          {lead.category ? (
+                            <div
+                              className="px-2 py-1 rounded-lg text-[12px] font-medium cursor-pointer category-button"
+                              style={{
+                                backgroundColor: `${lead.category.color}`,
+                                color: "white",
+                              }}
+                            >
+                              {lead.category.name}
+                            </div>
+                          ) : (
+                            <div className="px-2 py-1 rounded-lg text-[12px] font-medium cursor-pointer category-button text-[#4F4F4F] hover:bg-[#F7F7F7]">
+                              Select Category
+                            </div>
+                          )}
+                          {selectedCategoryLeadId === lead.id && (
+                            <div 
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                e.preventDefault();
+                              }}
+                              onMouseDown={(e) => {
+                                e.stopPropagation();
+                                e.preventDefault();
+                              }}
+                            >
+                              <CategoryDropdown
+                                categories={categories}
+                                selectedCategory={lead.category || null}
+                                onSelect={(category) =>
+                                  handleCategorySelect(lead.id, category)
+                                }
+                                onClose={() => setSelectedCategoryLeadId(null)}
+                                className="left-0 top-full mt-1"
+                                onAddCategory={handleAddCategory}
+                                onDeleteCategory={handleDeleteCategory}
+                              />
+                            </div>
+                          )}
+                        </div>
+                        {/* Lead column */}
+                        <div className="flex items-center gap-[9px] w-[300px]">
+                          <ProfileImage
+                            src={lead.profile_image_url}
+                            alt={lead.name}
+                            width={21}
+                            height={21}
+                            className="rounded-[4px]"
+                          />
+                          <span className="text-[14px]">
+                            {lead.name} 
+                          </span>
+                        </div>
+
+                        {/* Twitter column */}
+                        <div className="flex items-center gap-[9px] w-[200px]">
+                          <a
+                            href={`https://twitter.com/${lead.twitter_handle}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-[14px] text-blue-500 hover:underline"
+                          >
+                            @{lead.twitter_handle}
+                          </a>
+                        </div>
+
+                        {/* Followers column */}
+                        <div className="flex items-center gap-[9px] w-[200px]">
+                          <span className="text-[14px]">
+                            {lead.follower_count?.toLocaleString() || 0}
+                          </span>
+                        </div>
+
+                        {/* Last Post column */}
+                        <div className="flex items-center gap-[9px] w-[200px]">
+                          <span className="text-[14px]">
+                            {lead.last_post_date
+                              ? new Date(lead.last_post_date).toLocaleDateString()
+                              : "Never"}
+                          </span>
+                        </div>
+
+                        {/* More button */}
+                        <div
+                          id="add-personal-profile-button"
+                          className="relative ml-auto mr-3"
+                        >
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              
+                            }}
+                            className="flex flex-row p-1 hover:bg-[#e1e1e1] rounded-md justify-center items-center text-[#4F4F4F] font-medium text-[14px] cursor-pointer hover:opacity-80 w-full group"
+                          >
+                            <AddIcon className="mb-[2px] opacity-60 w-[15px] h-[15px] group-hover:opacity-100 cursor-pointer transition-opacity duration-150" />
+                          </button>
+                          {/* <AddPersonalProfileModal
+                            isOpen={showAddProfileModal === lead.id}
+                            onClose={() => {
+                              setShowAddProfileModal(null);
+                              setSelectedLeadId(null);
+                              setTwitterUrl("");
+                            }}
+                            onSubmit={handleAddProfile}
+                            twitterUrl={twitterUrl}
+                            setTwitterUrl={setTwitterUrl}
+                            isAddingProfile={isAddingProfile}
+                            className="right-0 top-full"
+                          /> */}
+                        </div>
+                        <div className="relative ">
+                          <button
+                            id="more-button"
+                            className="flex items-center gap-[9px] opacity-40 hover:opacity-100 transition-opacity duration-150 cursor-pointer"
+                            onClick={(e) => handleLeadMoreClick(e, lead.id)}
+                          >
+                            <MoreIcon className="w-[15px] h-[15px]" />
+                          </button>
+
+                          {/* More menu popup */}
+                          {openMenuLeadId === lead.id && (
+                            <div className="absolute right-0 top-full mt-1 bg-white border border-[#EBEBEB] rounded-lg shadow-lg min-w-[120px] z-10 menu-content">
+                              <button
+                                className="flex items-center gap-2 w-full px-3 py-2 text-[14px] text-[#4F4F4F] hover:bg-[#F7F7F7] transition-colors duration-150 cursor-pointer"
+                                onClick={(e) =>
+                                  handleLeadEditClick(
+                                    e,
+                                    lead.id,
+                                    `https://twitter.com/${lead.twitter_handle}`
+                                  )
+                                }
+                              >
+                                <EditIcon className="w-[15px] h-[15px]" />
+                                Edit
+                              </button>
+                              <button
+                                className="flex items-center gap-2 w-full px-3 py-2 text-[14px] text-[#FF4747] hover:bg-[#F7F7F7] transition-colors duration-150 cursor-pointer"
+                                onClick={(e) =>
+                                  handleLeadDeleteClick(e, lead.id, lead.name)
+                                }
+                              >
+                                <TrashIcon className="w-[15px] h-[15px]" />
+                                Delete
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                  <div className="relative">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setShowAddLeadModal("table");
+                      }}
+                      className="flex flex-row gap-[7.5px] px-[14px] pt-[14px] pb-[7px] justify-start items-center text-[#4F4F4F] font-medium text-[14px] cursor-pointer hover:opacity-80 w-full"
+                    >
+                      <AddIcon className="mb-[3px] opacity-70 w-[8px] h-[8px]" />
+                      New Lead
+                    </button>
+                    <AddLeadModal
+                      isOpen={showAddLeadModal === "table"}
+                      onClose={() => {
+                        setShowAddLeadModal(null);
+                        setAddLeadModalCategory(null);
+                      }}
+                      onSubmit={handleAddLead}
+                      twitterUrl={twitterUrl}
+                      setTwitterUrl={setTwitterUrl}
+                      isAddingLead={isAddingLead}
+                      className="-left-[10px] top-full"
+                      categories={categories}
+                      selectedCategory={addLeadModalCategory}
+                      onCategorySelect={setAddLeadModalCategory}
+                      onAddCategory={handleAddCategory}
+                      onDeleteCategory={handleDeleteCategory}
+                    />
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
-        )}
-        <div id="observer-load" className=""></div>
+          )}
+          <div id="observer-load" className=""></div>
+        </div>
+
+        {/* Pagination Controls */}
+        {/* ... existing code ... */}
+
+        {/* Update the Delete Confirmation Modal */}
+        <DeleteConfirmationModal
+          isOpen={showDeleteModal}
+          onClose={() => {
+            setShowDeleteModal(false);
+            setLeadToDelete(null);
+          }}
+          onConfirm={handleLeadDeleteConfirm}
+          companyName={leadToDelete?.name || ""}
+          className="delete-modal"
+        />
+
+        {/* Add EditLeadModal */}
+        <EditLeadModal
+          isOpen={showEditLeadModal}
+          onClose={() => {
+            setShowEditLeadModal(false);
+            setEditingLeadId(null);
+            setTwitterUrl("");
+          }}
+          onSubmit={handleLeadUpdate}
+          twitterUrl={twitterUrl}
+          setTwitterUrl={setTwitterUrl}
+          isEditingLead={isEditingLead}
+        />
       </div>
-
-      {/* Pagination Controls */}
-      {/* ... existing code ... */}
-
-      {/* Update the Delete Confirmation Modal */}
-      <DeleteConfirmationModal
-        isOpen={showDeleteModal}
-        onClose={() => {
-          setShowDeleteModal(false);
-          setLeadToDelete(null);
-        }}
-        onConfirm={handleLeadDeleteConfirm}
-        companyName={leadToDelete?.name || ""}
-        className="delete-modal"
-      />
-
-      {/* Add EditLeadModal */}
-      <EditLeadModal
-        isOpen={showEditLeadModal}
-        onClose={() => {
-          setShowEditLeadModal(false);
-          setEditingLeadId(null);
-          setTwitterUrl("");
-        }}
-        onSubmit={handleLeadUpdate}
-        twitterUrl={twitterUrl}
-        setTwitterUrl={setTwitterUrl}
-        isEditingLead={isEditingLead}
-      />
-    </div>
     </div>
   );
 }
